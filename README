@@ -1,5 +1,9 @@
 = Mysql Puppet module =
 
+NEW: This fork has been enabled installing MariaDb on Debian/Ubuntu. Just set
+
+$mysql_flavor = 'mariadb'
+
 == Usage ==
 
 include mysql::server
