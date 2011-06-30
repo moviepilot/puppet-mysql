@@ -15,21 +15,48 @@ class mysql::server {
 
   include mysql::params
 
-  user { "mysql":
-    ensure => present,
-    require => Package["mysql-server"],
-  }
+  case $mysql_flavor {
+	mariadb: {
 
-  package { "mysql-server":
-    ensure => installed,
-  }
+	  case $operatingsystem {
+		Ubuntu: {$os = 'ubuntu'
+			$mysql_package= "mariadb-server"}
+		Debian: {$os = 'debian'
+			$mysql_package= "mariadb-server"}
+		default: { fail ("mariadb not yet implemented for non Debian/Ubuntu systems")}
+	  }
+	  include apt
+
+	  apt::key {"1BB943DB":
+		source => "http://keyserver.ubuntu.com:11371/pks/lookup?op=get&search=0xCBCB082A1BB943DB",
+	  }
+	  apt::sources_list {"mariadb":
+	    ensure  => "present",
+	    content => "deb http://www.percona.com/downloads/MariaDB/repo/5.2/${os} ${lsbdistcodename} main",
+	    require => Apt::Key["1BB943DB"],
+	  }
+	  package { "${mysql_package}":
+	    ensure => installed,
+	    require => Apt::Sources_list["mariadb"],
+	  }
+	
+	}
+
+	default: {
+	 $mysql_package= "mysql-server"
+	  package { "${mysql_package}":
+	    ensure => installed,
+	  }
+	}
+  }	
+  
 
   file { "${mysql::params::data_dir}":
     ensure  => directory,
     owner   => "mysql",
     group   => "mysql",
     seltype => "mysqld_db_t",
-    require => Package["mysql-server"],
+    require => Package["${mysql_package}"],
   }
 
   if( "${mysql::params::data_dir}" != "/var/lib/mysql" ) {
@@ -47,7 +74,7 @@ class mysql::server {
     group => root,
     mode => 644,
     seltype => "mysqld_etc_t",
-    require => Package["mysql-server"],
+    require => Package["${mysql_package}"],
   }
 
   file { "/usr/share/augeas/lenses/contrib/mysql.aug":
@@ -162,7 +189,7 @@ class mysql::server {
       /RedHat|Fedora|CentOS/ => "mysqld",
       default => "mysql",
     },
-    require   => Package["mysql-server"],
+    require   => Package["${mysql_package}"],
   }
 
 
@@ -204,7 +231,7 @@ class mysql::server {
     unless      => "test -f /root/.my.cnf",
     command     => "mysqladmin -u${mysql_user} password ${mysql_password}",
     notify      => Exec["Generate my.cnf"],
-    require     => [Package["mysql-server"], Service["mysql"]]
+    require     => [Package["${mysql_package}"], Service["mysql"]]
   }
 
   exec { "Generate my.cnf":
