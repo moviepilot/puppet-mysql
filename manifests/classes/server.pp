@@ -16,38 +16,58 @@ class mysql::server {
   include mysql::params
 
   case $mysql_flavor {
-	mariadb: {
+    mariadb: {
 
-	  case $operatingsystem {
-		Ubuntu: {$os = 'ubuntu'
-			$mysql_package= "mariadb-server"}
-		Debian: {$os = 'debian'
-			$mysql_package= "mariadb-server"}
-		default: { fail ("mariadb not yet implemented for non Debian/Ubuntu systems")}
-	  }
-	  include apt
+      case $operatingsystem {
+      Ubuntu: {$os = 'ubuntu'
+        $mysql_package= "mariadb-server"}
+      Debian: {$os = 'debian'
+        $mysql_package= "mariadb-server"}
+      default: { fail ("mariadb not yet implemented for non Debian/Ubuntu systems")}
+      }
+      include apt
 
-	  apt::key {"1BB943DB":
-		source => "http://keyserver.ubuntu.com:11371/pks/lookup?op=get&search=0xCBCB082A1BB943DB",
-	  }
-	  apt::sources_list {"mariadb":
-	    ensure  => "present",
-	    content => "deb http://www.percona.com/downloads/MariaDB/repo/5.2/${os} ${lsbdistcodename} main",
-	    require => Apt::Key["1BB943DB"],
-	  }
-	  package { "${mysql_package}":
-	    ensure => installed,
-	    require => Apt::Sources_list["mariadb"],
-	  }
-	
+      apt::key {"1BB943DB":
+      source => "http://keyserver.ubuntu.com:11371/pks/lookup?op=get&search=0xCBCB082A1BB943DB",
+      }
+      apt::sources_list {"mariadb":
+        ensure  => "present",
+        content => "deb http://mirror2.hs-esslingen.de/mariadb/repo/5.3/${os} ${lsbdistcodename} main",
+        require => Apt::Key["1BB943DB"],
+      }
+      package { "${mysql_package}":
+        ensure => installed,
+        require => Apt::Sources_list["mariadb"],
+      }
+    file { "/etc/mysql/my.cnf":
+      ensure => present,
+      source => "puppet:///mysql/etc/mysql/mariadb-my.cnf",
+      path => $mysql::params::mycnf,
+      owner => root,
+      group => root,
+      mode => 600,
+      seltype => "mysqld_etc_t",
+      require => Package["${mysql_package}"],
+      notify => Service['mysql'],
+    }
 	}
 
 	default: {
-	 $mysql_package= "mysql-server"
-	  package { "${mysql_package}":
-	    ensure => installed,
-	  }
-	}
+     $mysql_package= "mysql-server"
+      package { "${mysql_package}":
+        ensure => installed,
+      }
+    file { "/etc/mysql/my.cnf":
+      ensure => present,
+      path => $mysql::params::mycnf,
+      owner => root,
+      group => root,
+      mode => 644,
+      seltype => "mysqld_etc_t",
+      require => Package["${mysql_package}"],
+      notify => Service['mysql'],
+    }
+    }
   }	
   
 
@@ -67,47 +87,42 @@ class mysql::server {
     }
   }
 
-  file { "/etc/mysql/my.cnf":
-    ensure => present,
-    path => $mysql::params::mycnf,
-    owner => root,
-    group => root,
-    mode => 644,
-    seltype => "mysqld_etc_t",
-    require => Package["${mysql_package}"],
-  }
 
   file { "/usr/share/augeas/lenses/contrib/mysql.aug":
     ensure => present,
     source => "puppet:///mysql/mysql.aug",
   }
-
-  augeas { "my.cnf/mysqld":
-    context => "${mysql::params::mycnfctx}/mysqld/",
-    load_path => "/usr/share/augeas/lenses/contrib/",
-    changes => [
-      "set pid-file /var/run/mysqld/mysqld.pid",
-      "set old_passwords 0",
-      "set character-set-server utf8",
-      "set log-warnings 1",
-      "set datadir ${mysql::params::data_dir}",
-      $operatingsystem ? {
-        /RedHat|Fedora|CentOS/ => "set log-error /var/log/mysqld.log",
-        default => "set log-error /var/log/mysql.err",
-      },
-      $operatingsystem ? {
-        /RedHat|Fedora|CentOS/ => "set log-slow-queries /var/log/mysql-slow-queries.log",
-        default => "set set log-slow-queries /var/log/mysql/mysql-slow.log",
-      },
-      #"ins log-slow-admin-statements after log-slow-queries", # BUG: not implemented in puppet yet
-      $operatingsystem ? {
-        /RedHat|Fedora|CentOS/ => "set socket /var/lib/mysql/mysql.sock",
-        default => "set socket /var/run/mysqld/mysqld.sock",
-      }
-    ],
-    require => [ File["/etc/mysql/my.cnf"], File["${mysql::params::data_dir}"] ],
-    notify => Service["mysql"],
-  }
+#
+#  augeas { "my.cnf/mysqld":
+#    context => "${mysql::params::mycnfctx}/mysqld/",
+#    load_path => "/usr/share/augeas/lenses/contrib/",
+#    changes => [
+#      "set pid-file /var/run/mysqld/mysqld.pid",
+#      "set old_passwords 0",
+#      "set character-set-server utf8",
+#      "set log-warnings 1",
+#      "set datadir ${mysql::params::data_dir}",
+#      $mysql_bind_all ? {
+#        true => "",
+#        default => "set bind-address 127.0.0.1",
+#      },
+#      $operatingsystem ? {
+#        /RedHat|Fedora|CentOS/ => "set log-error /var/log/mysqld.log",
+#        default => "set log-error /var/log/mysql.err",
+#      },
+#      $operatingsystem ? {
+#        /RedHat|Fedora|CentOS/ => "set log-slow-queries /var/log/mysql-slow-queries.log",
+#        default => "set set log-slow-queries /var/log/mysql/mysql-slow.log",
+#      },
+#      #"ins log-slow-admin-statements after log-slow-queries", # BUG: not implemented in puppet yet
+#      $operatingsystem ? {
+#        /RedHat|Fedora|CentOS/ => "set socket /var/lib/mysql/mysql.sock",
+#        default => "set socket /var/run/mysqld/mysqld.sock",
+#      }
+#    ],
+#    require => [ File["/etc/mysql/my.cnf"], File["${mysql::params::data_dir}"] ],
+#    notify => Service["mysql"],
+#  }
 
   # by default, replication is disabled
   augeas { "my.cnf/replication":
@@ -144,27 +159,27 @@ class mysql::server {
     context => "${mysql::params::mycnfctx}/",
     load_path => "/usr/share/augeas/lenses/contrib/",
     changes => [
-     "rm mysqld/key_buffer",
-     "rm mysqld/max_allowed_packet",
-     "rm mysqld/table_cache",
-     "rm mysqld/sort_buffer_size",
-     "rm mysqld/read_buffer_size",
-     "rm mysqld/read_rnd_buffer_size",
-     "rm mysqld/net_buffer_length",
-     "rm mysqld/myisam_sort_buffer_size",
-     "rm mysqld/thread_cache_size",
-     "rm mysqld/query_cache_size",
-     "rm mysqld/thread_concurrency",
-     "rm mysqld/thread_stack",
-     "rm mysqldump/max_allowed_packet",
-     "rm isamchk/key_buffer",
-     "rm isamchk/sort_buffer_size",
-     "rm isamchk/read_buffer",
-     "rm isamchk/write_buffer",
-     "rm myisamchk/key_buffer",
-     "rm myisamchk/sort_buffer_size",
-     "rm myisamchk/read_buffer",
-     "rm myisamchk/write_buffer"
+     #"rm mysqld/key_buffer",
+     #"rm mysqld/max_allowed_packet",
+     #"rm mysqld/table_cache",
+     #"rm mysqld/sort_buffer_size",
+     #"rm mysqld/read_buffer_size",
+     #"rm mysqld/read_rnd_buffer_size",
+     #"rm mysqld/net_buffer_length",
+     #"rm mysqld/myisam_sort_buffer_size",
+     #"rm mysqld/thread_cache_size",
+     #"rm mysqld/query_cache_size",
+     #"rm mysqld/thread_concurrency",
+     #"rm mysqld/thread_stack",
+     #"rm mysqldump/max_allowed_packet",
+     #"rm isamchk/key_buffer",
+     #"rm isamchk/sort_buffer_size",
+     #"rm isamchk/read_buffer",
+     #"rm isamchk/write_buffer",
+     #"rm myisamchk/key_buffer",
+     #"rm myisamchk/sort_buffer_size",
+     #"rm myisamchk/read_buffer",
+     #"rm myisamchk/write_buffer"
     ],
     require => File["/etc/mysql/my.cnf"],
     notify => Service["mysql"],
