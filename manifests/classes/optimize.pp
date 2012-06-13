@@ -17,8 +17,9 @@ class mysql::optimize {
   cron { "mysql-optimize":
     command => "/usr/local/bin/mysql-optimize.sh",
     user    => "root",
-    hour    => 5,
+    hour    => 12,
     minute  => 30,
+    weekday => "Sunday",
     require => File["/usr/local/bin/mysql-optimize.sh"],
   }
 
